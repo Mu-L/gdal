@@ -98,9 +98,10 @@ GDALRasterBand::~GDALRasterBand()
             static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn &&
         nBand == 1 && poDS != nullptr)
     {
-        CPLDebug("GDAL", "%d block reads on %d block band 1 of %s.",
-                 nBlockReads, nBlocksPerRow * nBlocksPerColumn,
-                 poDS->GetDescription());
+        CPLDebug(
+            "GDAL", "%d block reads on " CPL_FRMT_GIB " block band 1 of %s.",
+            nBlockReads, static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn,
+            poDS->GetDescription());
     }
 
     InvalidateMaskBand();
@@ -199,7 +200,8 @@ GDALRasterBand::~GDALRasterBand()
  *
  * @param eBufType the type of the pixel values in the pData data buffer. The
  * pixel values will automatically be translated to/from the GDALRasterBand
- * data type as needed.
+ * data type as needed. Most driver implementations will use GDALCopyWords64()
+ * to perform data type translation.
  *
  * @param nPixelSpace The byte offset from the start of one pixel value in
  * pData to the start of the next pixel value within a scanline. If defaulted
@@ -3751,12 +3753,13 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
         /*      Read the blocks, and add to histogram. */
         /* --------------------------------------------------------------------
          */
-        for (int iSampleBlock = 0;
-             iSampleBlock < nBlocksPerRow * nBlocksPerColumn;
+        for (GIntBig iSampleBlock = 0;
+             iSampleBlock <
+             static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
              iSampleBlock += nSampleRate)
         {
             if (!pfnProgress(
-                    iSampleBlock /
+                    static_cast<double>(iSampleBlock) /
                         (static_cast<double>(nBlocksPerRow) * nBlocksPerColumn),
                     "Compute Histogram", pProgressData))
             {
@@ -3764,8 +3767,8 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                 return CE_Failure;
             }
 
-            const int iYBlock = iSampleBlock / nBlocksPerRow;
-            const int iXBlock = iSampleBlock - nBlocksPerRow * iYBlock;
+            const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
+            const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
             GDALRasterBlock *poBlock = GetLockedBlockRef(iXBlock, iYBlock);
             if (poBlock == nullptr)
@@ -5950,12 +5953,15 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                     ? static_cast<GUInt32>(dfNoDataValue + 1e-10)
                     : nMaxValueType + 1;
 
-            for (int iSampleBlock = 0;
-                 iSampleBlock < nBlocksPerRow * nBlocksPerColumn;
+            for (GIntBig iSampleBlock = 0;
+                 iSampleBlock <
+                 static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
                  iSampleBlock += nSampleRate)
             {
-                const int iYBlock = iSampleBlock / nBlocksPerRow;
-                const int iXBlock = iSampleBlock - nBlocksPerRow * iYBlock;
+                const int iYBlock =
+                    static_cast<int>(iSampleBlock / nBlocksPerRow);
+                const int iXBlock =
+                    static_cast<int>(iSampleBlock % nBlocksPerRow);
 
                 GDALRasterBlock *const poBlock =
                     GetLockedBlockRef(iXBlock, iYBlock);
@@ -5988,9 +5994,9 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
 
                 poBlock->DropLock();
 
-                if (!pfnProgress(iSampleBlock /
-                                     static_cast<double>(nBlocksPerRow *
-                                                         nBlocksPerColumn),
+                if (!pfnProgress(static_cast<double>(iSampleBlock) /
+                                     (static_cast<double>(nBlocksPerRow) *
+                                      nBlocksPerColumn),
                                  "Compute Statistics", pProgressData))
                 {
                     ReportError(CE_Failure, CPLE_UserInterrupt,
@@ -6076,12 +6082,13 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
             }
         }
 
-        for (int iSampleBlock = 0;
-             iSampleBlock < nBlocksPerRow * nBlocksPerColumn;
+        for (GIntBig iSampleBlock = 0;
+             iSampleBlock <
+             static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
              iSampleBlock += nSampleRate)
         {
-            const int iYBlock = iSampleBlock / nBlocksPerRow;
-            const int iXBlock = iSampleBlock - nBlocksPerRow * iYBlock;
+            const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
+            const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
             GDALRasterBlock *const poBlock =
                 GetLockedBlockRef(iXBlock, iYBlock);
@@ -6141,8 +6148,8 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
             poBlock->DropLock();
 
             if (!pfnProgress(
-                    iSampleBlock /
-                        static_cast<double>(nBlocksPerRow * nBlocksPerColumn),
+                    static_cast<double>(iSampleBlock) /
+                        (static_cast<double>(nBlocksPerRow) * nBlocksPerColumn),
                     "Compute Statistics", pProgressData))
             {
                 ReportError(CE_Failure, CPLE_UserInterrupt, "User terminated");
@@ -6479,9 +6486,10 @@ static void ComputeMinMaxGeneric(const void *pData, GDALDataType eDataType,
 
 static bool ComputeMinMaxGenericIterBlocks(
     GDALRasterBand *poBand, GDALDataType eDataType, bool bSignedByte,
-    int nTotalBlocks, int nSampleRate, int nBlocksPerRow, bool bGotNoDataValue,
-    double dfNoDataValue, bool bGotFloatNoDataValue, float fNoDataValue,
-    GDALRasterBand *poMaskBand, double &dfMin, double &dfMax)
+    GIntBig nTotalBlocks, int nSampleRate, int nBlocksPerRow,
+    bool bGotNoDataValue, double dfNoDataValue, bool bGotFloatNoDataValue,
+    float fNoDataValue, GDALRasterBand *poMaskBand, double &dfMin,
+    double &dfMax)
 
 {
     GByte *pabyMaskData = nullptr;
@@ -6498,11 +6506,11 @@ static bool ComputeMinMaxGenericIterBlocks(
         }
     }
 
-    for (int iSampleBlock = 0; iSampleBlock < nTotalBlocks;
+    for (GIntBig iSampleBlock = 0; iSampleBlock < nTotalBlocks;
          iSampleBlock += nSampleRate)
     {
-        const int iYBlock = iSampleBlock / nBlocksPerRow;
-        const int iXBlock = iSampleBlock - nBlocksPerRow * iYBlock;
+        const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
+        const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
         GDALRasterBlock *poBlock = poBand->GetLockedBlockRef(iXBlock, iYBlock);
         if (poBlock == nullptr)
@@ -6810,12 +6818,15 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
 
         if (bUseOptimizedPath)
         {
-            for (int iSampleBlock = 0;
-                 iSampleBlock < nBlocksPerRow * nBlocksPerColumn;
+            for (GIntBig iSampleBlock = 0;
+                 iSampleBlock <
+                 static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
                  iSampleBlock += nSampleRate)
             {
-                const int iYBlock = iSampleBlock / nBlocksPerRow;
-                const int iXBlock = iSampleBlock - nBlocksPerRow * iYBlock;
+                const int iYBlock =
+                    static_cast<int>(iSampleBlock / nBlocksPerRow);
+                const int iXBlock =
+                    static_cast<int>(iSampleBlock % nBlocksPerRow);
 
                 GDALRasterBlock *poBlock = GetLockedBlockRef(iXBlock, iYBlock);
                 if (poBlock == nullptr)
@@ -6837,7 +6848,8 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
         }
         else
         {
-            const int nTotalBlocks = nBlocksPerRow * nBlocksPerColumn;
+            const GIntBig nTotalBlocks =
+                static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
             if (!ComputeMinMaxGenericIterBlocks(
                     this, eDataType, bSignedByte, nTotalBlocks, nSampleRate,
                     nBlocksPerRow, CPL_TO_BOOL(bGotNoDataValue), dfNoDataValue,

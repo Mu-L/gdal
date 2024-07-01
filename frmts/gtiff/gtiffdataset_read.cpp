@@ -106,7 +106,8 @@ int GTiffDataset::GetJPEGOverviewCount()
     GByte abyFFD8[] = {0xFF, 0xD8};
     if (TIFFGetField(m_hTIFF, TIFFTAG_JPEGTABLES, &nJPEGTableSize, &pJPEGTable))
     {
-        if (pJPEGTable == nullptr || nJPEGTableSize > INT_MAX ||
+        if (pJPEGTable == nullptr || nJPEGTableSize < 2 ||
+            nJPEGTableSize > INT_MAX ||
             static_cast<GByte *>(pJPEGTable)[nJPEGTableSize - 1] != 0xD9)
         {
             m_nJPEGOverviewCount = 0;
@@ -750,11 +751,33 @@ static void CPL_STDCALL ThreadDecompressionFuncErrorHandler(
                              psContext->nYCrbCrSubSampling1);
             }
         }
-        if (psContext->pExtraSamples)
+        if (poDS->m_nPlanarConfig == PLANARCONFIG_CONTIG)
         {
-            TIFFSetField(hTIFFTmp, TIFFTAG_EXTRASAMPLES,
-                         psContext->nExtraSampleCount,
-                         psContext->pExtraSamples);
+            if (psContext->pExtraSamples)
+            {
+                TIFFSetField(hTIFFTmp, TIFFTAG_EXTRASAMPLES,
+                             psContext->nExtraSampleCount,
+                             psContext->pExtraSamples);
+            }
+            else
+            {
+                const int nSamplesAccountedFor =
+                    poDS->m_nPhotometric == PHOTOMETRIC_RGB          ? 3
+                    : poDS->m_nPhotometric == PHOTOMETRIC_MINISBLACK ? 1
+                                                                     : 0;
+                if (nSamplesAccountedFor > 0 &&
+                    poDS->m_nSamplesPerPixel > nSamplesAccountedFor)
+                {
+                    // If the input image is not compliant regarndig ExtraSamples,
+                    // generate a synthetic one to avoid gazillons of warnings
+                    const auto nExtraSampleCount = static_cast<uint16_t>(
+                        poDS->m_nSamplesPerPixel - nSamplesAccountedFor);
+                    std::vector<uint16_t> anExtraSamples(
+                        nExtraSampleCount, EXTRASAMPLE_UNSPECIFIED);
+                    TIFFSetField(hTIFFTmp, TIFFTAG_EXTRASAMPLES,
+                                 nExtraSampleCount, anExtraSamples.data());
+                }
+            }
         }
         TIFFWriteCheck(hTIFFTmp, FALSE, "ThreadDecompressionFunc");
         TIFFWriteDirectory(hTIFFTmp);
@@ -1543,7 +1566,7 @@ int GTiffDataset::VirtualMemIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                int nXSize, int nYSize, void *pData,
                                int nBufXSize, int nBufYSize,
                                GDALDataType eBufType, int nBandCount,
-                               int *panBandMap, GSpacing nPixelSpace,
+                               const int *panBandMap, GSpacing nPixelSpace,
                                GSpacing nLineSpace, GSpacing nBandSpace,
                                GDALRasterIOExtraArg *psExtraArg)
 {
@@ -1746,7 +1769,7 @@ CPLErr GTiffDataset::CommonDirectIO(FetchBuffer &oFetcher, int nXOff, int nYOff,
                                     int nXSize, int nYSize, void *pData,
                                     int nBufXSize, int nBufYSize,
                                     GDALDataType eBufType, int nBandCount,
-                                    int *panBandMap, GSpacing nPixelSpace,
+                                    const int *panBandMap, GSpacing nPixelSpace,
                                     GSpacing nLineSpace, GSpacing nBandSpace)
 {
     const auto poFirstBand =
@@ -2878,8 +2901,8 @@ CPLErr GTiffDataset::CommonDirectIO(FetchBuffer &oFetcher, int nXOff, int nYOff,
 CPLErr GTiffDataset::CommonDirectIOClassic(
     FetchBufferDirectIO &oFetcher, int nXOff, int nYOff, int nXSize, int nYSize,
     void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
-    int nBandCount, int *panBandMap, GSpacing nPixelSpace, GSpacing nLineSpace,
-    GSpacing nBandSpace)
+    int nBandCount, const int *panBandMap, GSpacing nPixelSpace,
+    GSpacing nLineSpace, GSpacing nBandSpace)
 {
     return CommonDirectIO<FetchBufferDirectIO>(
         oFetcher, nXOff, nYOff, nXSize, nYSize, pData, nBufXSize, nBufYSize,
@@ -2899,7 +2922,7 @@ CPLErr GTiffDataset::CommonDirectIOClassic(
 int GTiffDataset::DirectIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                            int nYSize, void *pData, int nBufXSize,
                            int nBufYSize, GDALDataType eBufType, int nBandCount,
-                           int *panBandMap, GSpacing nPixelSpace,
+                           const int *panBandMap, GSpacing nPixelSpace,
                            GSpacing nLineSpace, GSpacing nBandSpace,
                            GDALRasterIOExtraArg *psExtraArg)
 {

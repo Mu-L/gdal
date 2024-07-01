@@ -134,9 +134,9 @@ class OGCAPIDataset final : public GDALDataset
   protected:
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
-                     GDALDataType eBufType, int nBandCount, int *panBandMap,
-                     GSpacing nPixelSpace, GSpacing nLineSpace,
-                     GSpacing nBandSpace,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
                      GDALRasterIOExtraArg *psExtraArg) override;
 
     int CloseDependentDatasets() override;
@@ -664,6 +664,10 @@ int OGCAPIDataset::Identify(GDALOpenInfo *poOpenInfo)
         return TRUE;
     if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "moaw"))
         return TRUE;
+    if (poOpenInfo->IsSingleAllowedDriver("OGCAPI"))
+    {
+        return TRUE;
+    }
     return FALSE;
 }
 
@@ -999,9 +1003,12 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
 
 bool OGCAPIDataset::InitFromURL(GDALOpenInfo *poOpenInfo)
 {
-    CPLAssert(STARTS_WITH_CI(poOpenInfo->pszFilename, "OGCAPI:"));
+    const char *pszInitialURL =
+        STARTS_WITH_CI(poOpenInfo->pszFilename, "OGCAPI:")
+            ? poOpenInfo->pszFilename + strlen("OGCAPI:")
+            : poOpenInfo->pszFilename;
     CPLJSONDocument oDoc;
-    CPLString osURL(poOpenInfo->pszFilename + strlen("OGCAPI:"));
+    CPLString osURL(pszInitialURL);
     if (!DownloadJSon(osURL, oDoc))
         return false;
 
@@ -2369,7 +2376,7 @@ CPLErr OGCAPIDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                 int nXSize, int nYSize, void *pData,
                                 int nBufXSize, int nBufYSize,
                                 GDALDataType eBufType, int nBandCount,
-                                int *panBandMap, GSpacing nPixelSpace,
+                                BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                 GSpacing nLineSpace, GSpacing nBandSpace,
                                 GDALRasterIOExtraArg *psExtraArg)
 {
@@ -2881,7 +2888,9 @@ GDALDataset *OGCAPIDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!Identify(poOpenInfo))
         return nullptr;
     auto poDS = std::make_unique<OGCAPIDataset>();
-    if (STARTS_WITH_CI(poOpenInfo->pszFilename, "OGCAPI:"))
+    if (STARTS_WITH_CI(poOpenInfo->pszFilename, "OGCAPI:") ||
+        STARTS_WITH(poOpenInfo->pszFilename, "http://") ||
+        STARTS_WITH(poOpenInfo->pszFilename, "https://"))
     {
         if (!poDS->InitFromURL(poOpenInfo))
             return nullptr;

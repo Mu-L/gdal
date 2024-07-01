@@ -616,7 +616,8 @@ static OGRLayer *GetLayerAndOverwriteIfNecessary(GDALDataset *poDstDS,
 static std::unique_ptr<OGRGeometry> LoadGeometry(const std::string &osDS,
                                                  const std::string &osSQL,
                                                  const std::string &osLyr,
-                                                 const std::string &osWhere)
+                                                 const std::string &osWhere,
+                                                 bool bMakeValid)
 {
     auto poDS = std::unique_ptr<GDALDataset>(
         GDALDataset::Open(osDS.c_str(), GDAL_OF_VECTOR));
@@ -661,15 +662,38 @@ static std::unique_ptr<OGRGeometry> LoadGeometry(const std::string &osDS,
             {
                 if (!poSrcGeom->IsValid())
                 {
-                    CPLError(CE_Warning, CPLE_AppDefined,
-                             "Geometry of feature " CPL_FRMT_GIB " of %s "
-                             "is invalid. Trying to make it valid",
-                             poFeat->GetFID(), osDS.c_str());
+                    if (!bMakeValid)
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Geometry of feature " CPL_FRMT_GIB " of %s "
+                                 "is invalid. You can try to make it valid by "
+                                 "specifying -makevalid, but the results of "
+                                 "the operation should be manually inspected.",
+                                 poFeat->GetFID(), osDS.c_str());
+                        oGC.empty();
+                        break;
+                    }
                     auto poValid =
                         std::unique_ptr<OGRGeometry>(poSrcGeom->MakeValid());
                     if (poValid)
                     {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Geometry of feature " CPL_FRMT_GIB " of %s "
+                                 "was invalid and has been made valid, "
+                                 "but the results of the operation "
+                                 "should be manually inspected.",
+                                 poFeat->GetFID(), osDS.c_str());
+
                         oGC.addGeometryDirectly(poValid.release());
+                    }
+                    else
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Geometry of feature " CPL_FRMT_GIB " of %s "
+                                 "is invalid, and could not been made valid.",
+                                 poFeat->GetFID(), osDS.c_str());
+                        oGC.empty();
+                        break;
                     }
                 }
                 else
@@ -2302,7 +2326,8 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
     {
         psOptions->poClipSrc =
             LoadGeometry(psOptions->osClipSrcDS, psOptions->osClipSrcSQL,
-                         psOptions->osClipSrcLayer, psOptions->osClipSrcWhere);
+                         psOptions->osClipSrcLayer, psOptions->osClipSrcWhere,
+                         psOptions->bMakeValid);
         if (psOptions->poClipSrc == nullptr)
         {
             CPLError(CE_Failure, CPLE_IllegalArg,
@@ -2328,18 +2353,67 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             *pbUsageError = TRUE;
         return nullptr;
     }
+    if (psOptions->poClipSrc && !psOptions->poClipSrc->IsValid())
+    {
+        if (!psOptions->bMakeValid)
+        {
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "-clipsrc geometry is invalid. You can try to make it "
+                     "valid with -makevalid, but the results of the operation "
+                     "should be manually inspected.");
+            return nullptr;
+        }
+        auto poValid =
+            std::unique_ptr<OGRGeometry>(psOptions->poClipSrc->MakeValid());
+        if (!poValid)
+        {
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "-clipsrc geometry is invalid and cannot be made valid.");
+            return nullptr;
+        }
+        CPLError(CE_Warning, CPLE_AppDefined,
+                 "-clipsrc geometry was invalid and has been made valid, "
+                 "but the results of the operation "
+                 "should be manually inspected.");
+        psOptions->poClipSrc = std::move(poValid);
+    }
 
     if (!psOptions->osClipDstDS.empty())
     {
         psOptions->poClipDst =
             LoadGeometry(psOptions->osClipDstDS, psOptions->osClipDstSQL,
-                         psOptions->osClipDstLayer, psOptions->osClipDstWhere);
+                         psOptions->osClipDstLayer, psOptions->osClipDstWhere,
+                         psOptions->bMakeValid);
         if (psOptions->poClipDst == nullptr)
         {
             CPLError(CE_Failure, CPLE_IllegalArg,
                      "cannot load dest clip geometry");
             return nullptr;
         }
+    }
+    if (psOptions->poClipDst && !psOptions->poClipDst->IsValid())
+    {
+        if (!psOptions->bMakeValid)
+        {
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "-clipdst geometry is invalid. You can try to make it "
+                     "valid with -makevalid, but the results of the operation "
+                     "should be manually inspected.");
+            return nullptr;
+        }
+        auto poValid =
+            std::unique_ptr<OGRGeometry>(psOptions->poClipDst->MakeValid());
+        if (!poValid)
+        {
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "-clipdst geometry is invalid and cannot be made valid.");
+            return nullptr;
+        }
+        CPLError(CE_Warning, CPLE_AppDefined,
+                 "-clipdst geometry was invalid and has been made valid, "
+                 "but the results of the operation "
+                 "should be manually inspected.");
+        psOptions->poClipDst = std::move(poValid);
     }
 
     GDALDataset *poDS = GDALDataset::FromHandle(hSrcDS);
@@ -2641,6 +2715,10 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         }
     }
 
+    // Automatically close poODS on error, if it has been created by this
+    // method.
+    GDALDatasetUniquePtr poODSUniquePtr(hDstDS == nullptr ? poODS : nullptr);
+
     // Some syntaxic sugar to make "ogr2ogr [-f PostgreSQL] PG:dbname=....
     // source [srclayer] -lco OVERWRITE=YES" work like "ogr2ogr -overwrite
     // PG:dbname=.... source [srclayer]" The former syntax used to work at
@@ -2658,8 +2736,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "-append and -lco OVERWRITE=YES are mutually exclusive");
-            if (hDstDS == nullptr)
-                GDALClose(poODS);
             return nullptr;
         }
         bOverwrite = true;
@@ -2707,8 +2783,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Failed to process SRS definition: %s",
                      psOptions->osOutputSRSDef.c_str());
-            if (hDstDS == nullptr)
-                GDALClose(poODS);
             return nullptr;
         }
         oOutputSRSHolder.get()->SetCoordinateEpoch(
@@ -2729,8 +2803,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Failed to process SRS definition: %s",
                      psOptions->osSourceSRSDef.c_str());
-            if (hDstDS == nullptr)
-                GDALClose(poODS);
             return nullptr;
         }
         oSourceSRS.SetCoordinateEpoch(psOptions->dfSourceCoordinateEpoch);
@@ -2741,17 +2813,16 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
     /*      Create a transformation object from the source to               */
     /*      destination coordinate system.                                  */
     /* -------------------------------------------------------------------- */
-    GCPCoordTransformation *poGCPCoordTrans = nullptr;
+    std::unique_ptr<GCPCoordTransformation> poGCPCoordTrans;
     if (psOptions->oGCPs.nGCPCount > 0)
     {
-        poGCPCoordTrans = new GCPCoordTransformation(
+        poGCPCoordTrans = std::make_unique<GCPCoordTransformation>(
             psOptions->oGCPs.nGCPCount, psOptions->oGCPs.pasGCPs,
             psOptions->nTransformOrder,
             poSourceSRS ? poSourceSRS : oOutputSRSHolder.get());
         if (!(poGCPCoordTrans->IsValid()))
         {
-            delete poGCPCoordTrans;
-            poGCPCoordTrans = nullptr;
+            return nullptr;
         }
     }
 
@@ -2805,7 +2876,7 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
     oTranslator.m_poOutputSRS = oOutputSRSHolder.get();
     oTranslator.m_bNullifyOutputSRS = psOptions->bNullifyOutputSRS;
     oTranslator.m_poUserSourceSRS = poSourceSRS;
-    oTranslator.m_poGCPCoordTrans = poGCPCoordTrans;
+    oTranslator.m_poGCPCoordTrans = poGCPCoordTrans.get();
     oTranslator.m_eGType = psOptions->eGType;
     oTranslator.m_eGeomTypeConversion = psOptions->eGeomTypeConversion;
     oTranslator.m_bMakeValid = psOptions->bMakeValid;
@@ -2977,9 +3048,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "-splitlistfields not supported in this mode");
-            if (hDstDS == nullptr)
-                GDALClose(poODS);
-            delete poGCPCoordTrans;
             return nullptr;
         }
 
@@ -2992,9 +3060,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "Couldn't fetch requested layer %s!", pszLayer);
-                if (hDstDS == nullptr)
-                    GDALClose(poODS);
-                delete poGCPCoordTrans;
                 return nullptr;
             }
         }
@@ -3044,9 +3109,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                 {
                     CPLError(CE_Failure, CPLE_AppDefined,
                              "Couldn't fetch advertised layer %d!", iLayer);
-                    if (hDstDS == nullptr)
-                        GDALClose(poODS);
-                    delete poGCPCoordTrans;
                     return nullptr;
                 }
 
@@ -3085,9 +3147,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "Couldn't fetch advertised layer %d!", iLayer);
-                if (hDstDS == nullptr)
-                    GDALClose(poODS);
-                delete poGCPCoordTrans;
                 return nullptr;
             }
 
@@ -3106,9 +3165,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                                  poLayer->GetName());
                         if (!psOptions->bSkipFailures)
                         {
-                            if (hDstDS == nullptr)
-                                GDALClose(poODS);
-                            delete poGCPCoordTrans;
                             return nullptr;
                         }
                     }
@@ -3133,8 +3189,8 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         while (true)
         {
             OGRLayer *poFeatureLayer = nullptr;
-            OGRFeature *poFeature = poDS->GetNextFeature(
-                &poFeatureLayer, nullptr, pfnProgress, pProgressArg);
+            auto poFeature = std::unique_ptr<OGRFeature>(poDS->GetNextFeature(
+                &poFeatureLayer, nullptr, pfnProgress, pProgressArg));
             if (poFeature == nullptr)
                 break;
             std::map<OGRLayer *, int>::const_iterator oIter =
@@ -3142,7 +3198,7 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
             if (oIter == oMapLayerToIdx.end())
             {
                 // Feature in a layer that is not a layer of interest.
-                OGRFeature::DestroyFeature(poFeature);
+                // nothing to do
             }
             else
             {
@@ -3170,10 +3226,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
 
                         if (psInfo == nullptr && !psOptions->bSkipFailures)
                         {
-                            if (hDstDS == nullptr)
-                                GDALClose(poODS);
-                            delete poGCPCoordTrans;
-                            OGRFeature::DestroyFeature(poFeature);
                             return nullptr;
                         }
 
@@ -3186,9 +3238,9 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                 int iLayer = oIter->second;
                 TargetLayerInfo *psInfo = pasAssocLayers[iLayer].psInfo.get();
                 if ((psInfo == nullptr ||
-                     !oTranslator.Translate(poFeature, psInfo, 0, nullptr,
-                                            nTotalEventsDone, nullptr, nullptr,
-                                            psOptions.get())) &&
+                     !oTranslator.Translate(poFeature.release(), psInfo, 0,
+                                            nullptr, nTotalEventsDone, nullptr,
+                                            nullptr, psOptions.get())) &&
                     !psOptions->bSkipFailures)
                 {
                     CPLError(
@@ -3201,8 +3253,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                     nRetCode = 1;
                     break;
                 }
-                if (psInfo == nullptr)
-                    OGRFeature::DestroyFeature(poFeature);
             }
         }  // while true
 
@@ -3230,9 +3280,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
 
                 if (psInfo == nullptr && !psOptions->bSkipFailures)
                 {
-                    if (hDstDS == nullptr)
-                        GDALClose(poODS);
-                    delete poGCPCoordTrans;
                     return nullptr;
                 }
 
@@ -3262,9 +3309,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                 {
                     CPLError(CE_Failure, CPLE_AppDefined,
                              "Couldn't fetch advertised layer %d!", iLayer);
-                    if (hDstDS == nullptr)
-                        GDALClose(poODS);
-                    delete poGCPCoordTrans;
                     return nullptr;
                 }
                 if (!poDS->IsLayerPrivate(iLayer))
@@ -3294,9 +3338,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                              psOptions->aosLayers[iLayer]);
                     if (!psOptions->bSkipFailures)
                     {
-                        if (hDstDS == nullptr)
-                            GDALClose(poODS);
-                        delete poGCPCoordTrans;
                         return nullptr;
                     }
                 }
@@ -3346,9 +3387,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
                              psOptions->osWHERE.c_str(), poLayer->GetName());
                     if (!psOptions->bSkipFailures)
                     {
-                        if (hDstDS == nullptr)
-                            GDALClose(poODS);
-                        delete poGCPCoordTrans;
                         return nullptr;
                     }
                 }
@@ -3502,8 +3540,6 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         }
     }
 
-    delete poGCPCoordTrans;
-
     // Note: this guarantees that the file can be opened in a consistent state,
     // without requiring to close poODS, only if the driver declares
     // DCAP_FLUSHCACHE_CONSISTENT_STATE
@@ -3511,10 +3547,13 @@ GDALDatasetH GDALVectorTranslate(const char *pszDest, GDALDatasetH hDstDS,
         nRetCode = 1;
 
     if (nRetCode == 0)
-        return GDALDataset::ToHandle(poODS);
+    {
+        if (hDstDS)
+            return hDstDS;
+        else
+            return GDALDataset::ToHandle(poODSUniquePtr.release());
+    }
 
-    if (hDstDS == nullptr)
-        GDALClose(poODS);
     return nullptr;
 }
 
@@ -4550,8 +4589,10 @@ SetupTargetLayer::Setup(OGRLayer *poSrcLayer, const char *pszNewLayerName,
         oGeomFieldDefn.SetSpatialRef(poOutputSRS);
         oGeomFieldDefn.SetCoordinatePrecision(oCoordPrec);
         oGeomFieldDefn.SetNullable(bGeomFieldNullable);
-        poDstLayer = m_poDstDS->CreateLayer(pszNewLayerName, &oGeomFieldDefn,
-                                            papszLCOTemp);
+        poDstLayer = m_poDstDS->CreateLayer(
+            pszNewLayerName,
+            eGCreateLayerType == wkbNone ? nullptr : &oGeomFieldDefn,
+            papszLCOTemp);
         CSLDestroy(papszLCOTemp);
 
         if (poDstLayer == nullptr)
@@ -7741,9 +7782,10 @@ GDALVectorTranslateOptions *GDALVectorTranslateOptionsNew(
                 psOptions->poClipSrc.reset(poGeom);
                 if (psOptions->poClipSrc == nullptr)
                 {
-                    CPLError(CE_Failure, CPLE_IllegalArg,
-                             "Invalid geometry. Must be a valid POLYGON or "
-                             "MULTIPOLYGON WKT");
+                    CPLError(
+                        CE_Failure, CPLE_IllegalArg,
+                        "Invalid -clipsrc geometry. Must be a valid POLYGON or "
+                        "MULTIPOLYGON WKT");
                     return nullptr;
                 }
             }
@@ -7795,9 +7837,10 @@ GDALVectorTranslateOptions *GDALVectorTranslateOptionsNew(
                 psOptions->poClipDst.reset(poGeom);
                 if (psOptions->poClipDst == nullptr)
                 {
-                    CPLError(CE_Failure, CPLE_IllegalArg,
-                             "Invalid geometry. Must be a valid POLYGON or "
-                             "MULTIPOLYGON WKT");
+                    CPLError(
+                        CE_Failure, CPLE_IllegalArg,
+                        "Invalid -clipdst geometry. Must be a valid POLYGON or "
+                        "MULTIPOLYGON WKT");
                     return nullptr;
                 }
             }
@@ -7845,6 +7888,8 @@ GDALVectorTranslateOptions *GDALVectorTranslateOptionsNew(
     catch (const std::exception &err)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "%s", err.what());
+        if (psOptionsForBinary)
+            psOptionsForBinary->bShowUsageIfError = true;
         return nullptr;
     }
 }

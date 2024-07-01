@@ -49,6 +49,7 @@
 #include "cpl_error.h"
 #include "cpl_string.h"
 #include "cpl_vsi.h"
+#include "cpl_vsi_virtual.h"
 #include "ogr_api.h"
 #include "ogr_core.h"
 #include "ogr_feature.h"
@@ -152,7 +153,7 @@ bool OGRCSVLayer::Matches(const char *pszFieldName, char **papszPossibleNames)
 
 void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
                                    const char *pszGeonamesGeomFieldPrefix,
-                                   char **papszOpenOptions)
+                                   CSLConstList papszOpenOptions)
 {
     bMergeDelimiter = CPLFetchBool(papszOpenOptions, "MERGE_SEPARATOR", false);
     bEmptyStringNull =
@@ -902,7 +903,7 @@ static bool OGRCSVIsFalse(const char *pszStr)
 /*                        AutodetectFieldTypes()                        */
 /************************************************************************/
 
-char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
+char **OGRCSVLayer::AutodetectFieldTypes(CSLConstList papszOpenOptions,
                                          int nFieldCount)
 {
     const bool bStreaming =
@@ -973,7 +974,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
     std::vector<int> anFieldPrecision(nFieldCount);
     int nStringFieldCount = 0;
 
-    while (!VSIFEofL(fp))
+    while (!fp->Eof() && !fp->Error())
     {
         char **papszTokens =
             CSVReadParseLine3L(fp, m_nMaxLineSize, szDelimiter,
@@ -988,7 +989,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
         if (bStreaming)
         {
             // Ignore last line if it is truncated.
-            if (VSIFEofL(fp) && nRead == static_cast<size_t>(nRequested) &&
+            if (fp->Eof() && nRead == static_cast<size_t>(nRequested) &&
                 pszData[nRead - 1] != 13 && pszData[nRead - 1] != 10)
             {
                 CSLDestroy(papszTokens);

@@ -16,38 +16,53 @@ Synopsis
 .. code-block::
 
     ogr2ogr [--help] [--long-usage] [--help-general]
-            [-of <output_format>] [-dsco <NAME>=<VALUE>]... [-lco <NAME>=<VALUE>]...
+            [-of <output_format>]
+            [-dsco <NAME>=<VALUE>]... [-lco <NAME>=<VALUE>]...
             [[-append]|[-upsert]|[-overwrite]]
-            [-update] [-sql <statement>|@<filename>] [-dialect <dialect>] [-spat <xmin> <ymin> <xmax> <ymax>]
-            [-where <restricted_where>|@<filename>] [-select <field_list>] [-nln <name>] [-nlt <type>]...
+            [-update] [-sql <statement>|@<filename>] [-dialect <dialect>]
+            [-spat <xmin> <ymin> <xmax> <ymax>]
+            [-where <restricted_where>|@<filename>] [-select <field_list>]
+            [-nln <name>] [-nlt <type>]...
             [-s_srs <srs_def>]
             [[-a_srs <srs_def>]|[-t_srs <srs_def>]]
             <dst_dataset_name> <src_dataset_name> [<layer_name>]...
 
     Field related options:
-           [-addfields] [-relaxedFieldNameMatch] [-fieldTypeToString All|<type1>[,<type2>]...]
-           [-mapFieldType <srctype>|All=<dsttype>[,<srctype2>=<dsttype2>]...] [-fieldmap <field_1>[,<field_2>]...]
-           [-splitlistfields] [-maxsubfields <n>] [-emptyStrAsNull] [-forceNullable] [-unsetFieldWidth]
-           [-unsetDefault] [-resolveDomains] [-dateTimeTo UTC|UTC(+|-)<HH>|UTC(+|-)<HH>:<MM>] [-noNativeData]
+           [-addfields] [-relaxedFieldNameMatch]
+           [-fieldTypeToString All|<type1>[,<type2>]...]
+           [-mapFieldType <srctype>|All=<dsttype>[,<srctype2>=<dsttype2>]...]
+           [-fieldmap <field_1>[,<field_2>]...]
+           [-splitlistfields] [-maxsubfields <n>] [-emptyStrAsNull]
+           [-forceNullable] [-unsetFieldWidth]
+           [-unsetDefault] [-resolveDomains]
+           [-dateTimeTo UTC|UTC(+|-)<HH>|UTC(+|-)<HH>:<MM>] [-noNativeData]
 
     Advanced geometry and SRS related options:
-           [-dim layer_dim|2|XY|3|XYZ|XYM|XYZM] [-s_coord_epoch <epoch>] [-a_coord_epoch <epoch>]
-           [-t_coord_epoch <epoch>] [-ct <pipeline_def>] [-spat_srs <srs_def>] [-geomfield <name>]
-           [-segmentize <max_dist>] [-simplify <tolerance>] [-makevalid] [-wrapdateline]
-           [-datelineoffset <val_in_degree>]
+           [-dim layer_dim|2|XY|3|XYZ|XYM|XYZM]
+           [-s_coord_epoch <epoch>] [-a_coord_epoch <epoch>]
+           [-t_coord_epoch <epoch>] [-ct <pipeline_def>]
+           [-spat_srs <srs_def>] [-geomfield <name>]
+           [-segmentize <max_dist>] [-simplify <tolerance>]
+           [-makevalid] [-wrapdateline] [-datelineoffset <val_in_degree>]
            [-clipsrc [<xmin> <ymin> <xmax> <ymax>]|<WKT>|<datasource>|spat_extent]
-           [-clipsrcsql <sql_statement>] [-clipsrclayer <layername>] [-clipsrcwhere <expression>]
-           [-clipdst [<xmin> <ymin> <xmax> <ymax>]|<WKT>|<datasource>] [-clipdstsql <sql_statement>]
-           [-clipdstlayer <layername>] [-clipdstwhere <expression>] [-explodecollections] [-zfield <name>]
+           [-clipsrcsql <sql_statement>] [-clipsrclayer <layername>]
+           [-clipsrcwhere <expression>]
+           [-clipdst [<xmin> <ymin> <xmax> <ymax>]|<WKT>|<datasource>]
+           [-clipdstsql <sql_statement>] [-clipdstlayer <layername>]
+           [-clipdstwhere <expression>]
+           [-explodecollections] [-zfield <name>]
            [-gcp <ungeoref_x> <ungeoref_y> <georef_x> <georef_y> [<elevation>]]...
            [-tps] [-order 1|2|3]
-           [-xyRes <val>[ m|mm|deg]] [-zRes <val>[ m|mm]] [-mRes <val>] [-unsetCoordPrecision]
+           [-xyRes <val>[ m|mm|deg]] [-zRes <val>[ m|mm]] [-mRes <val>]
+           [-unsetCoordPrecision]
 
     Other options:
-           [--quiet] [-progress] [-if <format>]... [-oo <NAME>=<VALUE>]... [-doo <NAME>=<VALUE>]...
+           [--quiet] [-progress] [-if <format>]...
+           [-oo <NAME>=<VALUE>]... [-doo <NAME>=<VALUE>]...
            [-fid <FID>] [-preserve_fid] [-unsetFid]
            [[-skipfailures]|[-gt <n>|unlimited]]
-           [-limit <nb_features>] [-ds_transaction] [-mo <NAME>=<VALUE>]... [-nomd]
+           [-limit <nb_features>] [-ds_transaction]
+           [-mo <NAME>=<VALUE>]... [-nomd]
 
 Description
 -----------
@@ -145,9 +160,9 @@ output coordinate system or even reprojecting the features during translation.
 
 .. option:: -dialect <dialect>
 
-    SQL dialect. In some cases can be used to use (unoptimized) :ref:`ogr_sql_dialect` instead
+    SQL dialect. In some cases can be used to use the (unoptimized) :ref:`ogr_sql_dialect` instead
     of the native SQL of an RDBMS by passing the ``OGRSQL`` dialect value.
-    The :ref:`sql_sqlite_dialect` dialect can be select with the ``SQLITE``
+    The :ref:`sql_sqlite_dialect` dialect can be chosen with the ``SQLITE``
     and ``INDIRECT_SQLITE`` dialect values, and this can be used with any datasource.
 
 .. option:: -where <restricted_where>
@@ -255,7 +270,7 @@ output coordinate system or even reprojecting the features during translation.
     output SRS is a dynamic CRS. Only taken into account if :option:`-t_srs`
     is used. It is also mutually exclusive with  :option:`-a_coord_epoch`.
 
-    Before PROJ 9.4, :option:`-s_coord_epoch` and :option:`-t_coord_epoch` are
+    Before PROJ 9.4, :option:`-s_coord_epoch` and :option:`-t_coord_epoch` were
     mutually exclusive, due to lack of support for transformations between two dynamic CRS.
 
 .. option:: -s_srs <srs_def>
@@ -317,7 +332,7 @@ output coordinate system or even reprojecting the features during translation.
     source SRS is a dynamic CRS. Only taken into account if :option:`-s_srs`
     is used.
 
-    Before PROJ 9.4, :option:`-s_coord_epoch` and :option:`-t_coord_epoch` are
+    Before PROJ 9.4, :option:`-s_coord_epoch` and :option:`-t_coord_epoch` were
     mutually exclusive, due to lack of support for transformations between two dynamic CRS.
 
 .. option:: -ct <string>
@@ -325,8 +340,12 @@ output coordinate system or even reprojecting the features during translation.
     A PROJ string (single step operation or multiple step string starting with
     +proj=pipeline), a WKT2 string describing a CoordinateOperation, or a
     urn:ogc:def:coordinateOperation:EPSG::XXXX URN overriding the default
-    transformation from the source to the target CRS. It must take into account
-    the axis order of the source and target CRS.
+    transformation from the source to the target CRS.
+
+    It must take into account the axis order of the source and target CRS, that
+    is typically include a ``step proj=axisswap order=2,1`` at the beginning of
+    the pipeline if the source CRS has northing/easting axis order, and/or at
+    the end of the pipeline if the target CRS has northing/easting axis order.
 
     .. versionadded:: 3.0
 
@@ -435,9 +454,19 @@ output coordinate system or even reprojecting the features during translation.
     topology per feature, in particular for polygon geometries, but not for a
     whole layer.
 
+    The specified value of this option is the tolerance used to merge
+    consecutive points of the output geometry using the
+    :cpp:func:`OGRGeometry::Simplify` method
+    The unit of the distance is in
+    georeferenced units of the source vector dataset.
+    This option is applied before the reprojection implied by :option:`-t_srs`
+
 .. option:: -segmentize <max_dist>
 
-    Maximum distance between 2 nodes. Used to create intermediate points.
+    The specified value of this option is the maximum distance between two
+    consecutive points of the output geometry before intermediate points are added.
+    The unit of the distance is georeferenced units of the source raster.
+    This option is applied before the reprojection implied by :option:`-t_srs`
 
 .. option:: -makevalid
 

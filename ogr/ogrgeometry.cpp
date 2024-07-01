@@ -3269,10 +3269,13 @@ static GEOSGeom convertToGEOSGeom(GEOSContextHandle_t hGEOSCtxt,
 /** Returns a GEOSGeom object corresponding to the geometry.
  *
  * @param hGEOSCtxt GEOS context
+ * @param bRemoveEmptyParts Whether empty parts of the geometry should be
+ * removed before exporting to GEOS (GDAL >= 3.10)
  * @return a GEOSGeom object corresponding to the geometry.
  */
 GEOSGeom
-OGRGeometry::exportToGEOS(UNUSED_IF_NO_GEOS GEOSContextHandle_t hGEOSCtxt) const
+OGRGeometry::exportToGEOS(UNUSED_IF_NO_GEOS GEOSContextHandle_t hGEOSCtxt,
+                          UNUSED_IF_NO_GEOS bool bRemoveEmptyParts) const
 
 {
 #ifndef HAVE_GEOS
@@ -3301,6 +3304,8 @@ OGRGeometry::exportToGEOS(UNUSED_IF_NO_GEOS GEOSContextHandle_t hGEOSCtxt) const
     if (hasCurveGeometry())
     {
         poLinearGeom = getLinearGeometry();
+        if (bRemoveEmptyParts)
+            poLinearGeom->removeEmptyParts();
 #if (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR < 12)
         // GEOS < 3.12 doesn't support M dimension
         if (poLinearGeom->IsMeasured())
@@ -3315,9 +3320,17 @@ OGRGeometry::exportToGEOS(UNUSED_IF_NO_GEOS GEOSContextHandle_t hGEOSCtxt) const
         if (IsMeasured())
         {
             poLinearGeom = clone();
+            if (bRemoveEmptyParts)
+                poLinearGeom->removeEmptyParts();
             poLinearGeom->setMeasured(FALSE);
         }
+        else
 #endif
+            if (bRemoveEmptyParts && hasEmptyParts())
+        {
+            poLinearGeom = clone();
+            poLinearGeom->removeEmptyParts();
+        }
     }
     if (eType == wkbTriangle)
     {
@@ -6046,7 +6059,8 @@ OGRErr OGRGeometry::Centroid(OGRPoint *poPoint) const
 #else
 
     GEOSContextHandle_t hGEOSCtxt = createGEOSContext();
-    GEOSGeom hThisGeosGeom = exportToGEOS(hGEOSCtxt);
+    GEOSGeom hThisGeosGeom =
+        exportToGEOS(hGEOSCtxt, /* bRemoveEmptyParts = */ true);
 
     if (hThisGeosGeom != nullptr)
     {
@@ -8492,4 +8506,84 @@ void OGRwkbExportOptionsSetPrecision(
     psOptions->sPrecision = OGRGeomCoordinateBinaryPrecision();
     if (hPrecisionOptions)
         psOptions->sPrecision.SetFrom(*hPrecisionOptions);
+}
+
+/************************************************************************/
+/*                             IsRectangle()                            */
+/************************************************************************/
+
+/**
+ * \brief Returns whether the geometry is a polygon with 4 corners forming
+ * a rectangle.
+ *
+ * @since GDAL 3.10
+ */
+bool OGRGeometry::IsRectangle() const
+{
+    if (wkbFlatten(getGeometryType()) != wkbPolygon)
+        return false;
+
+    const OGRPolygon *poPoly = toPolygon();
+
+    if (poPoly->getNumInteriorRings() != 0)
+        return false;
+
+    const OGRLinearRing *poRing = poPoly->getExteriorRing();
+    if (!poRing)
+        return false;
+
+    if (poRing->getNumPoints() > 5 || poRing->getNumPoints() < 4)
+        return false;
+
+    // If the ring has 5 points, the last should be the first.
+    if (poRing->getNumPoints() == 5 && (poRing->getX(0) != poRing->getX(4) ||
+                                        poRing->getY(0) != poRing->getY(4)))
+        return false;
+
+    // Polygon with first segment in "y" direction.
+    if (poRing->getX(0) == poRing->getX(1) &&
+        poRing->getY(1) == poRing->getY(2) &&
+        poRing->getX(2) == poRing->getX(3) &&
+        poRing->getY(3) == poRing->getY(0))
+        return true;
+
+    // Polygon with first segment in "x" direction.
+    if (poRing->getY(0) == poRing->getY(1) &&
+        poRing->getX(1) == poRing->getX(2) &&
+        poRing->getY(2) == poRing->getY(3) &&
+        poRing->getX(3) == poRing->getX(0))
+        return true;
+
+    return false;
+}
+
+/************************************************************************/
+/*                           hasEmptyParts()                            */
+/************************************************************************/
+
+/**
+ * \brief Returns whether a geometry has empty parts/rings.
+ *
+ * Returns true if removeEmptyParts() will modify the geometry.
+ *
+ * This is different from IsEmpty().
+ *
+ * @since GDAL 3.10
+ */
+bool OGRGeometry::hasEmptyParts() const
+{
+    return false;
+}
+
+/************************************************************************/
+/*                          removeEmptyParts()                          */
+/************************************************************************/
+
+/**
+ * \brief Remove empty parts/rings from this geometry.
+ *
+ * @since GDAL 3.10
+ */
+void OGRGeometry::removeEmptyParts()
+{
 }

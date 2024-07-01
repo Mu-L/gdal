@@ -371,7 +371,7 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
         raise ValueError("I/O operation on closed file.")
 %}
 
-%pythonprepend VSIFSeekL %{
+%pythonprepend wrapper_VSIFSeekL %{
     if args[0].this is None:
         raise ValueError("I/O operation on closed file.")
 %}
@@ -2032,39 +2032,49 @@ def GetMDArrayNames(self, options = []) -> "list[str]":
             return s
         return self.ReadAsStringArray()
     if dt_class == GEDTC_NUMERIC:
-        if dt.GetNumericDataType() in (GDT_Byte, GDT_Int8, GDT_Int16, GDT_UInt16, GDT_Int32):
+        if dt.GetNumericDataType() in (GDT_Byte, GDT_UInt16,
+                                       GDT_Int8, GDT_Int16, GDT_Int32):
             if self.GetTotalElementsCount() == 1:
                 return self.ReadAsInt()
-            else:
-                return self.ReadAsIntArray()
-        else:
+            return self.ReadAsIntArray()
+        if dt.GetNumericDataType() in (GDT_UInt32, GDT_Int64):
             if self.GetTotalElementsCount() == 1:
-                return self.ReadAsDouble()
-            else:
-                return self.ReadAsDoubleArray()
+                return self.ReadAsInt64()
+            return self.ReadAsInt64Array()
+        if self.GetTotalElementsCount() == 1:
+            return self.ReadAsDouble()
+        return self.ReadAsDoubleArray()
     return self.ReadAsRaw()
 
   def Write(self, val):
     if isinstance(val, (int, type(12345678901234))):
         if val >= -0x80000000 and val <= 0x7FFFFFFF:
             return self.WriteInt(val)
-        else:
-            return self.WriteDouble(val)
+        if val >= -0x8000000000000000 and val <= 0x7FFFFFFFFFFFFFFF:
+            return self.WriteInt64(val)
+        return self.WriteDouble(val)
     if isinstance(val, float):
-      return self.WriteDouble(val)
+        return self.WriteDouble(val)
     if isinstance(val, str) and self.GetDataType().GetClass() != GEDTC_COMPOUND:
-      return self.WriteString(val)
+        return self.WriteString(val)
     if isinstance(val, list):
-      if len(val) == 0:
-        if self.GetDataType().GetClass() == GEDTC_STRING:
-            return self.WriteStringArray(val)
-        else:
+        if len(val) == 0:
+            if self.GetDataType().GetClass() == GEDTC_STRING:
+                return self.WriteStringArray(val)
             return self.WriteDoubleArray(val)
-      if isinstance(val[0], (int, type(12345678901234), float)):
-        return self.WriteDoubleArray(val)
-      if isinstance(val[0], str):
-        return self.WriteStringArray(val)
-    if isinstance(val, dict) and self.GetDataType().GetSubType() == GEDTST_JSON:
+        if isinstance(val[0], (int, type(12345678901234))):
+            if all(v >= -0x80000000 and v <= 0x7FFFFFFF for v in val):
+                return self.WriteIntArray(val)
+            if all(v >= -0x8000000000000000 and v <= 0x7FFFFFFFFFFFFFFF
+                   for v in val):
+                return self.WriteInt64Array(val)
+            return self.WriteDoubleArray(val)
+        if isinstance(val[0], float):
+            return self.WriteDoubleArray(val)
+        if isinstance(val[0], str):
+            return self.WriteStringArray(val)
+    if (isinstance(val, dict) and
+        self.GetDataType().GetSubType() == GEDTST_JSON):
         import json
         return self.WriteString(json.dumps(val))
     return self.WriteRaw(val)
@@ -4190,15 +4200,15 @@ def Footprint(destNameOrDestDS, srcDS, **kwargs):
 
     1. Special mode to get deserialized GeoJSON (in EPSG:4326 if dstSRS not specified):
 
-    >>> deserialized_geojson = gdal.FootPrint(None, src_ds, format="GeoJSON")
+    >>> deserialized_geojson = gdal.Footprint(None, src_ds, format="GeoJSON")
 
     2. Special mode to get WKT:
 
-    >>> wkt = gdal.FootPrint(None, src_ds, format="WKT")
+    >>> wkt = gdal.Footprint(None, src_ds, format="WKT")
 
     3. Get result in a GeoPackage
 
-    >>> gdal.FootPrintf("out.gpkg", src_ds, format="GPKG")
+    >>> gdal.Footprint("out.gpkg", src_ds, format="GPKG")
 
     """
 
@@ -4900,4 +4910,26 @@ def quiet_errors():
     tuple.col_intersection = col_intersection
     tuple.row_intersection = row_intersection
     val = tuple
+%}
+
+
+%feature("pythonappend") MultipartUploadGetCapabilities %{
+    if val:
+        non_sequential_upload_supported, parallel_upload_supported, abort_supported, min_part_size, max_part_size, max_part_count = val
+        import collections
+        tuple = collections.namedtuple('MultipartUploadGetCapabilitiesResult',
+            ['non_sequential_upload_supported',
+             'parallel_upload_supported',
+             'abort_supported',
+             'min_part_size',
+             'max_part_size',
+             'max_part_count',
+             ])
+        tuple.non_sequential_upload_supported = non_sequential_upload_supported
+        tuple.parallel_upload_supported = parallel_upload_supported
+        tuple.abort_supported = abort_supported
+        tuple.min_part_size = min_part_size
+        tuple.max_part_size = max_part_size
+        tuple.max_part_count = max_part_count
+        val = tuple
 %}

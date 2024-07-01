@@ -3090,6 +3090,50 @@ def test_ogr_csv_geom_coord_precision_OGR_APPLY_GEOM_SET_PRECISION(tmp_vsimem):
 
 
 ###############################################################################
+# Test invalid GEOMETRY option
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_csv_invalid_geometry_option(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.csv")
+    ds = gdal.GetDriverByName("CSV").Create(filename, 0, 0, 0, gdal.GDT_Unknown)
+    with pytest.raises(
+        Exception,
+        match="Geometry type 3D Line String is not compatible with GEOMETRY=AS_XYZ",
+    ):
+        ds.CreateLayer(
+            "test", geom_type=ogr.wkbLineString25D, options=["GEOMETRY=AS_XYZ"]
+        )
+
+    filename = str(tmp_vsimem / "test2.csv")
+    ds = gdal.GetDriverByName("CSV").Create(filename, 0, 0, 0, gdal.GDT_Unknown)
+    with gdal.quiet_errors(), pytest.raises(
+        Exception, match="Unsupported value foo for creation option GEOMETRY"
+    ):
+        ds.CreateLayer("test", geom_type=ogr.wkbLineString25D, options=["GEOMETRY=foo"])
+
+
+###############################################################################
+# Test force opening a CSV file
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_csv_force_opening(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.bin")
+
+    with gdaltest.vsi_open(filename, "wb") as fdest:
+        fdest.write(b"foo\nbar\n")
+
+    with pytest.raises(Exception):
+        gdal.OpenEx(filename)
+
+    ds = gdal.OpenEx(filename, allowed_drivers=["CSV"])
+    assert ds.GetDriver().GetDescription() == "CSV"
+
+
+###############################################################################
 
 
 if __name__ == "__main__":

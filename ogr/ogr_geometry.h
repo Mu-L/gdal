@@ -523,8 +523,9 @@ class CPL_DLL OGRGeometry
 
     static GEOSContextHandle_t createGEOSContext();
     static void freeGEOSContext(GEOSContextHandle_t hGEOSCtxt);
-    virtual GEOSGeom
-    exportToGEOS(GEOSContextHandle_t hGEOSCtxt) const CPL_WARN_UNUSED_RESULT;
+    GEOSGeom
+    exportToGEOS(GEOSContextHandle_t hGEOSCtxt,
+                 bool bRemoveEmptyParts = false) const CPL_WARN_UNUSED_RESULT;
     virtual OGRBoolean hasCurveGeometry(int bLookForNonLinear = FALSE) const;
     virtual OGRGeometry *getCurveGeometry(
         const char *const *papszOptions = nullptr) const CPL_WARN_UNUSED_RESULT;
@@ -608,6 +609,9 @@ class CPL_DLL OGRGeometry
 
     OGRGeometry *SetPrecision(double dfGridSize, int nFlags) const;
 
+    virtual bool hasEmptyParts() const;
+    virtual void removeEmptyParts();
+
     //! @cond Doxygen_Suppress
     // backward compatibility to non-standard method names.
     OGRBoolean Intersect(OGRGeometry *) const
@@ -630,6 +634,8 @@ class CPL_DLL OGRGeometry
     //! @endcond
 
     virtual void swapXY();
+
+    bool IsRectangle() const;
 
     //! @cond Doxygen_Suppress
     static OGRGeometry *CastToIdentity(OGRGeometry *poGeom)
@@ -2144,6 +2150,9 @@ class CPL_DLL OGRCurveCollection
 
     OGRErr removeCurve(int iIndex, bool bDelete = true);
 
+    bool hasEmptyParts() const;
+    void removeEmptyParts();
+
     OGRErr transform(OGRGeometry *poGeom, OGRCoordinateTransformation *poCT);
     void flattenTo2D(OGRGeometry *poGeom);
     void segmentize(double dfMaxLength);
@@ -2332,6 +2341,9 @@ class CPL_DLL OGRCompoundCurve : public OGRCurve
     }
 
     virtual void swapXY() override;
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     OGR_ALLOW_UPCAST_TO(Curve)
     OGR_ALLOW_CAST_TO_THIS(CompoundCurve)
@@ -2581,6 +2593,9 @@ class CPL_DLL OGRCurvePolygon : public OGRSurface
     }
 
     virtual void swapXY() override;
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     OGR_ALLOW_UPCAST_TO(Surface)
     OGR_ALLOW_CAST_TO_THIS(CurvePolygon)
@@ -3006,6 +3021,9 @@ class CPL_DLL OGRGeometryCollection : public OGRGeometry
     virtual OGRErr addGeometryDirectly(OGRGeometry *);
     OGRErr addGeometry(std::unique_ptr<OGRGeometry> geom);
     virtual OGRErr removeGeometry(int iIndex, int bDelete = TRUE);
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     virtual void
     assignSpatialReference(const OGRSpatialReference *poSR) override;
@@ -3503,6 +3521,9 @@ class CPL_DLL OGRPolyhedralSurface : public OGRSurface
     virtual void setMeasured(OGRBoolean bIsMeasured) override;
     virtual void swapXY() override;
     OGRErr removeGeometry(int iIndex, int bDelete = TRUE);
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     virtual void accept(IOGRGeometryVisitor *visitor) override
     {
