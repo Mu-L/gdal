@@ -869,7 +869,7 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                     if ((o->field_bit >= FIELD_CODEC) &&
                         (TIFFFieldSet(tif, o->field_bit)))
                     {
-                        switch (o->get_field_type)
+                        switch (o->set_field_type)
                         {
                             case TIFF_SETGET_ASCII:
                             {
@@ -2074,7 +2074,7 @@ static void EvaluateIFDdatasizeWrite(TIFF *tif, uint32_t count,
     uint64_t datalength = (uint64_t)count * typesize;
     if (datalength > ((tif->tif_flags & TIFF_BIGTIFF) ? 0x8U : 0x4U))
     {
-        /* LibTIFF increments write address to an even offset, thus datalenght
+        /* LibTIFF increments write address to an even offset, thus datalength
          * written is also incremented. */
         if (datalength & 1)
             datalength++;
@@ -3198,7 +3198,7 @@ static int TIFFLinkDirectory(TIFF *tif)
         /*
          * Not the first directory, search to the last and append.
          */
-        tdir_t dirn = -1;
+        tdir_t dirn = 0;
         if (tif->tif_lastdiroff != 0 &&
             _TIFFGetDirNumberFromOffset(tif, tif->tif_lastdiroff, &dirn))
         {
@@ -3276,7 +3276,7 @@ static int TIFFLinkDirectory(TIFF *tif)
         /*
          * Not the first directory, search to the last and append.
          */
-        tdir_t dirn = -1;
+        tdir_t dirn = 0;
         if (tif->tif_lastdiroff != 0 &&
             _TIFFGetDirNumberFromOffset(tif, tif->tif_lastdiroff, &dirn))
         {

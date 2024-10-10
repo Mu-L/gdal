@@ -129,6 +129,10 @@ the health of the project:
 
     .. container:: horizontal-logo
 
+        `Phoenix LiDAR Systems, LLC <https://phoenixlidar.com/>`__
+
+    .. container:: horizontal-logo
+
         `PIX4D <https://www.pix4d.com/>`__
 
     .. container:: horizontal-logo
@@ -146,6 +150,10 @@ the health of the project:
     .. container:: horizontal-logo
 
         `Space Intelligence <https://www.space-intelligence.com>`__
+
+    .. container:: horizontal-logo
+
+        `T-Kartor USA <https://www.t-kartorusa.com/>`__
 
     .. container:: horizontal-logo
 
@@ -239,7 +247,7 @@ Related resources
 
 .. Source of the PDF is at https://docs.google.com/document/d/1yhMWeI_LgEXPUkngqOitqcKfp7ov6WsS41v5ulz-kd0/edit#
 
-.. _Sustainable GDAL Sponsorship Prospectus: https://gdal.org/sponsors/Sustainable%20GDAL%20Sponsorship%20Prospectus.pdf
+.. _Sustainable GDAL Sponsorship Prospectus: ../_static/Sustainable%20GDAL%20Sponsorship%20Prospectus.pdf
 
 ..
     Developer comment: make html includes a hack to hide the table from
@@ -248,5 +256,6 @@ Related resources
 
 .. toctree::
    :maxdepth: 0
+   :hidden:
 
    faq

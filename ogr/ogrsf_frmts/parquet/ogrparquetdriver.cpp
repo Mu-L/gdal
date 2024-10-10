@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2022, Planet Labs
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_pam.h"
@@ -31,6 +15,7 @@
 
 #include <algorithm>
 #include <map>
+#include <tuple>
 
 #include "ogr_parquet.h"
 #include "ogrparquetdrivercore.h"
@@ -50,7 +35,8 @@
 static GDALDataset *OpenFromDatasetFactory(
     const std::string &osBasePath,
     const std::shared_ptr<arrow::dataset::DatasetFactory> &factory,
-    CSLConstList papszOpenOptions)
+    CSLConstList papszOpenOptions,
+    const std::shared_ptr<arrow::fs::FileSystem> &fs)
 {
     std::shared_ptr<arrow::dataset::Dataset> dataset;
     PARQUET_ASSIGN_OR_THROW(dataset, factory->Finish());
@@ -64,6 +50,7 @@ static GDALDataset *OpenFromDatasetFactory(
         poDS.get(), CPLGetBasename(osBasePath.c_str()), bIsVSI, dataset,
         papszOpenOptions);
     poDS->SetLayer(std::move(poLayer));
+    poDS->SetFileSystem(fs);
     return poDS.release();
 }
 
@@ -71,9 +58,9 @@ static GDALDataset *OpenFromDatasetFactory(
 /*                         GetFileSystem()                              */
 /************************************************************************/
 
-static std::shared_ptr<arrow::fs::FileSystem>
+static std::tuple<std::shared_ptr<arrow::fs::FileSystem>, std::string>
 GetFileSystem(std::string &osBasePathInOut,
-              const std::string &osQueryParameters, std::string &osFSFilename)
+              const std::string &osQueryParameters)
 {
     // Instantiate file system:
     // - VSIArrowFileSystem implementation for /vsi files
@@ -81,6 +68,7 @@ GetFileSystem(std::string &osBasePathInOut,
     std::shared_ptr<arrow::fs::FileSystem> fs;
     const bool bIsVSI = STARTS_WITH(osBasePathInOut.c_str(), "/vsi");
     VSIStatBufL sStat;
+    std::string osFSFilename;
     if ((bIsVSI ||
          CPLTestBool(CPLGetConfigOption("OGR_PARQUET_USE_VSI", "YES"))) &&
         VSIStatL(osBasePathInOut.c_str(), &sStat) == 0)
@@ -97,14 +85,14 @@ GetFileSystem(std::string &osBasePathInOut,
         {
             char *pszCurDir = CPLGetCurrentDir();
             if (pszCurDir == nullptr)
-                return nullptr;
+                return {nullptr, osFSFilename};
             osPath = CPLFormFilename(pszCurDir, osPath.c_str(), nullptr);
             CPLFree(pszCurDir);
         }
         PARQUET_ASSIGN_OR_THROW(
             fs, arrow::fs::FileSystemFromUriOrPath(osPath, &osFSFilename));
     }
-    return fs;
+    return {fs, osFSFilename};
 }
 
 /************************************************************************/
@@ -116,8 +104,8 @@ static GDALDataset *OpenParquetDatasetWithMetadata(
     const std::string &osQueryParameters, CSLConstList papszOpenOptions)
 {
     std::string osBasePath(osBasePathIn);
-    std::string osFSFilename;
-    auto fs = GetFileSystem(osBasePath, osQueryParameters, osFSFilename);
+    const auto &[fs, osFSFilename] =
+        GetFileSystem(osBasePath, osQueryParameters);
 
     arrow::dataset::ParquetFactoryOptions options;
     auto partitioningFactory = arrow::dataset::HivePartitioning::MakeFactory();
@@ -125,13 +113,14 @@ static GDALDataset *OpenParquetDatasetWithMetadata(
         arrow::dataset::PartitioningOrFactory(std::move(partitioningFactory));
 
     std::shared_ptr<arrow::dataset::DatasetFactory> factory;
+    // coverity[copy_constructor_call]
     PARQUET_ASSIGN_OR_THROW(
         factory, arrow::dataset::ParquetDatasetFactory::Make(
-                     osFSFilename + '/' + pszMetadataFile, std::move(fs),
+                     osFSFilename + '/' + pszMetadataFile, fs,
                      std::make_shared<arrow::dataset::ParquetFileFormat>(),
                      std::move(options)));
 
-    return OpenFromDatasetFactory(osBasePath, factory, papszOpenOptions);
+    return OpenFromDatasetFactory(osBasePath, factory, papszOpenOptions, fs);
 }
 
 /************************************************************************/
@@ -144,8 +133,8 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
                                   CSLConstList papszOpenOptions)
 {
     std::string osBasePath(osBasePathIn);
-    std::string osFSFilename;
-    auto fs = GetFileSystem(osBasePath, osQueryParameters, osFSFilename);
+    const auto &[fs, osFSFilename] =
+        GetFileSystem(osBasePath, osQueryParameters);
 
     arrow::dataset::FileSystemFactoryOptions options;
     std::shared_ptr<arrow::dataset::DatasetFactory> factory;
@@ -153,9 +142,10 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
     const auto fileInfo = fs->GetFileInfo(osFSFilename);
     if (fileInfo->IsFile())
     {
+        // coverity[copy_constructor_call]
         PARQUET_ASSIGN_OR_THROW(
             factory, arrow::dataset::FileSystemDatasetFactory::Make(
-                         std::move(fs), {osFSFilename},
+                         fs, {std::move(osFSFilename)},
                          std::make_shared<arrow::dataset::ParquetFileFormat>(),
                          std::move(options)));
     }
@@ -167,17 +157,18 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
             std::move(partitioningFactory));
 
         arrow::fs::FileSelector selector;
-        selector.base_dir = osFSFilename;
+        selector.base_dir = std::move(osFSFilename);
         selector.recursive = true;
 
+        // coverity[copy_constructor_call]
         PARQUET_ASSIGN_OR_THROW(
             factory, arrow::dataset::FileSystemDatasetFactory::Make(
-                         std::move(fs), std::move(selector),
+                         fs, std::move(selector),
                          std::make_shared<arrow::dataset::ParquetFileFormat>(),
                          std::move(options)));
     }
 
-    return OpenFromDatasetFactory(osBasePath, factory, papszOpenOptions);
+    return OpenFromDatasetFactory(osBasePath, factory, papszOpenOptions, fs);
 }
 
 #endif
@@ -339,7 +330,7 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
     {
         VSIStatBufL sStat;
         if (!osBasePath.empty() && osBasePath.back() == '/')
-            osBasePath.resize(osBasePath.size() - 1);
+            osBasePath.pop_back();
         std::string osMetadataPath =
             CPLFormFilename(osBasePath.c_str(), "_metadata", nullptr);
         if (CPLTestBool(
@@ -443,7 +434,8 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
                 if (fp == nullptr)
                     return nullptr;
             }
-            infile = std::make_shared<OGRArrowRandomAccessFile>(std::move(fp));
+            infile = std::make_shared<OGRArrowRandomAccessFile>(osFilename,
+                                                                std::move(fp));
         }
         else
         {

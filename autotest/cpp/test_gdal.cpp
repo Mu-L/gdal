@@ -7,23 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
 /*
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_unit_test.h"
@@ -260,12 +244,74 @@ TEST_F(test_gdal, GDALDataTypeUnion_special_cases)
                                false /* complex */),
               GDT_Int64);
 
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -128, 0), GDT_Int16);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32768, 0), GDT_Int16);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32769, 0), GDT_Int32);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999, 0), GDT_Float32);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999.9876, 0),
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -128, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32768, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32769, false), GDT_Int32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int8, 127, false), GDT_Int8);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int8, 128, false), GDT_Int16);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int16, 32767, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int16, 32768, false), GDT_Int32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt16, 65535, false), GDT_UInt16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt16, 65536, false), GDT_UInt32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int32, INT32_MAX, false),
+              GDT_Int32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int32, INT32_MAX + 1.0, false),
+              GDT_Int64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt32, UINT32_MAX, false),
+              GDT_UInt32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt32, UINT32_MAX + 1.0, false),
+              GDT_UInt64);
+
+    // (1 << 63) - 1024
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_Int64, 9223372036854774784.0, false),
+        GDT_Int64);
+    // (1 << 63) - 512
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_Int64, 9223372036854775296.0, false),
+        GDT_Float64);
+
+    // (1 << 64) - 2048
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_UInt64, 18446744073709549568.0, false),
+        GDT_UInt64);
+    // (1 << 64) + 4096
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_UInt64, 18446744073709555712.0, false),
+        GDT_Float64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999, false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999.9876, false),
               GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, std::numeric_limits<double>::quiet_NaN(), false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float64, -99999.9876, false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, std::numeric_limits<double>::quiet_NaN(), false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Unknown, 0, false), GDT_Byte);
 }
 
 // Test GDALAdjustValueToDataType()
@@ -568,6 +614,11 @@ TEST_F(test_gdal, GDALWarp_error_flush_cache)
 // source dataset when we want.
 TEST_F(test_gdal, GDALWarp_VRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     const char *args[] = {"-of", "VRT", nullptr};
     GDALWarpAppOptions *psOptions =
         GDALWarpAppOptionsNew((char **)args, nullptr);
@@ -584,6 +635,11 @@ TEST_F(test_gdal, GDALWarp_VRT)
 // source dataset when we want.
 TEST_F(test_gdal, GDALTranslate_VRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     const char *args[] = {"-of", "VRT", nullptr};
     GDALTranslateOptions *psOptions =
         GDALTranslateOptionsNew((char **)args, nullptr);
@@ -600,6 +656,11 @@ TEST_F(test_gdal, GDALTranslate_VRT)
 // source dataset when we want.
 TEST_F(test_gdal, GDALBuildVRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     GDALDatasetH hSrcDS = GDALOpen(GCORE_DATA_DIR "byte.tif", GA_ReadOnly);
     GDALDatasetH hOutDS =
         GDALBuildVRT("", 1, &hSrcDS, nullptr, nullptr, nullptr);
@@ -805,6 +866,106 @@ TEST_F(test_gdal, GDALIsValueExactAs)
     EXPECT_TRUE(GDALIsValueExactAs<double>(std::numeric_limits<double>::max()));
     EXPECT_TRUE(
         GDALIsValueExactAs<double>(std::numeric_limits<double>::quiet_NaN()));
+}
+
+// Test GDALIsValueExactAs()
+TEST_F(test_gdal, GDALIsValueExactAs_C_func)
+{
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_Byte));
+    EXPECT_TRUE(GDALIsValueExactAs(255, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(-1, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(256, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Byte));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-128, GDT_Int8));
+    EXPECT_TRUE(GDALIsValueExactAs(127, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(-129, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(128, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int8));
+
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_UInt16));
+    EXPECT_TRUE(GDALIsValueExactAs(65535, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(-1, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(65536, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt16));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-32768, GDT_Int16));
+    EXPECT_TRUE(GDALIsValueExactAs(32767, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(-32769, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(32768, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int16));
+
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<uint32_t>::lowest(),
+                                   GDT_UInt32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<uint32_t>::max(), GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        std::numeric_limits<uint32_t>::lowest() - 1.0, GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(std::numeric_limits<uint32_t>::max() + 1.0,
+                                    GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt32));
+
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<int32_t>::lowest(), GDT_Int32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<int32_t>::max(), GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        std::numeric_limits<int32_t>::lowest() - 1.0, GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(std::numeric_limits<int32_t>::max() + 1.0,
+                                    GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int32));
+
+    EXPECT_TRUE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<uint64_t>::lowest()),
+        GDT_UInt64));
+    // (1 << 64) - 2048
+    EXPECT_TRUE(GDALIsValueExactAs(18446744073709549568.0, GDT_UInt64));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<uint64_t>::lowest()) - 1.0,
+        GDT_UInt64));
+    // (1 << 64)
+    EXPECT_FALSE(GDALIsValueExactAs(18446744073709551616.0, GDT_UInt64));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt64));
+
+    EXPECT_TRUE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<int64_t>::lowest()),
+        GDT_Int64));
+    // (1 << 63) - 1024
+    EXPECT_TRUE(GDALIsValueExactAs(9223372036854774784.0, GDT_Int64));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<int64_t>::lowest()) - 2048.0,
+        GDT_Int64));
+    // (1 << 63) - 512
+    EXPECT_FALSE(GDALIsValueExactAs(9223372036854775296.0, GDT_Int64));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int64));
+
+    EXPECT_TRUE(
+        GDALIsValueExactAs(-std::numeric_limits<float>::max(), GDT_Float32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<float>::max(), GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(-std::numeric_limits<float>::infinity(),
+                                   GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<float>::infinity(),
+                                   GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::quiet_NaN(),
+                                   GDT_Float32));
+    EXPECT_TRUE(
+        !GDALIsValueExactAs(-std::numeric_limits<double>::max(), GDT_Float32));
+    EXPECT_TRUE(
+        !GDALIsValueExactAs(std::numeric_limits<double>::max(), GDT_Float32));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-std::numeric_limits<double>::infinity(),
+                                   GDT_Float64));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::infinity(),
+                                   GDT_Float64));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(-std::numeric_limits<double>::max(), GDT_Float64));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<double>::max(), GDT_Float64));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::quiet_NaN(),
+                                   GDT_Float64));
+
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_CInt16));
 }
 
 #ifdef _MSC_VER
@@ -2842,10 +3003,15 @@ TEST_F(test_gdal, MarkSuppressOnClose)
 {
     const char *pszFilename = "/vsimem/out.tif";
     const char *const apszOptions[] = {"PROFILE=BASELINE", nullptr};
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
     {
-        GDALDatasetUniquePtr poDstDS(
-            GDALDriver::FromHandle(GDALGetDriverByName("GTiff"))
-                ->Create(pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+    else
+    {
+        GDALDatasetUniquePtr poDstDS(GDALDriver::FromHandle(hDrv)->Create(
+            pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
         poDstDS->SetMetadataItem("FOO", "BAR");
         poDstDS->MarkSuppressOnClose();
         poDstDS->GetRasterBand(1)->Fill(255);
@@ -2869,10 +3035,15 @@ TEST_F(test_gdal, UnMarkSuppressOnClose)
 {
     const char *pszFilename = "/vsimem/out.tif";
     const char *const apszOptions[] = {"PROFILE=BASELINE", nullptr};
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
     {
-        GDALDatasetUniquePtr poDstDS(
-            GDALDriver::FromHandle(GDALGetDriverByName("GTiff"))
-                ->Create(pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+    else
+    {
+        GDALDatasetUniquePtr poDstDS(GDALDriver::FromHandle(hDrv)->Create(
+            pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
         poDstDS->MarkSuppressOnClose();
         poDstDS->GetRasterBand(1)->Fill(255);
         if (poDstDS->IsMarkedSuppressOnClose())
@@ -2952,6 +3123,12 @@ TEST_F(test_gdal, GDALCachedPixelAccessor)
 // (https://github.com/OSGeo/gdal/issues/5989)
 TEST_F(test_gdal, VRTCachingOpenOptions)
 {
+    if (GDALGetMetadataItem(GDALGetDriverByName("VRT"), GDAL_DMD_OPENOPTIONLIST,
+                            nullptr) == nullptr)
+    {
+        GTEST_SKIP() << "VRT driver Open() missing";
+    }
+
     class TestRasterBand : public GDALRasterBand
     {
       protected:
@@ -3278,6 +3455,10 @@ TEST_F(test_gdal, GDALDatasetReportError)
 // Test GDALDataset::GetCompressionFormats() and ReadCompressedData()
 TEST_F(test_gdal, gtiff_ReadCompressedData)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     if (GDALGetDriverByName("JPEG") == nullptr)
     {
         GTEST_SKIP() << "JPEG support missing";
@@ -3439,6 +3620,10 @@ TEST_F(test_gdal, gtiff_ReadCompressedData)
 // Test GDALDataset::GetCompressionFormats() and ReadCompressedData()
 TEST_F(test_gdal, gtiff_ReadCompressedData_jpeg_rgba)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     if (GDALGetDriverByName("JPEG") == nullptr)
     {
         GTEST_SKIP() << "JPEG support missing";
@@ -3779,6 +3964,11 @@ TEST_F(test_gdal, jpegxl_jpeg_compatible_ReadCompressedData)
 // Test GDAL_OF_SHARED flag and open options
 TEST_F(test_gdal, open_shared_open_options)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+
     CPLErrorReset();
     const char *const apszOpenOptions[] = {"OVERVIEW_LEVEL=NONE", nullptr};
     {
@@ -4018,6 +4208,329 @@ TEST_F(test_gdal, gdal_gcp_class)
             EXPECT_EQ(gcps_from_c[i].Y(), gcps[i].Y());
             EXPECT_EQ(gcps_from_c[i].Z(), gcps[i].Z());
         }
+    }
+}
+
+// Test GDALRasterBand::ReadRaster
+TEST_F(test_gdal, ReadRaster)
+{
+    GDALDatasetUniquePtr poDS(GDALDriver::FromHandle(GDALGetDriverByName("MEM"))
+                                  ->Create("", 2, 3, 1, GDT_Float64, nullptr));
+    std::array<double, 6> buffer = {
+        -1e300, -1,     //////////////////////////////////////////////
+        1,      128,    //////////////////////////////////////////////
+        32768,  1e300,  //////////////////////////////////////////////
+    };
+    GDALRasterIOExtraArg sExtraArg;
+    INIT_RASTERIO_EXTRA_ARG(sExtraArg);
+    EXPECT_EQ(poDS->GetRasterBand(1)->RasterIO(
+                  GF_Write, 0, 0, 2, 3, buffer.data(), 2, 3, GDT_Float64,
+                  sizeof(double), 2 * sizeof(double), &sExtraArg),
+              CE_None);
+
+    {
+        std::vector<uint8_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res = std::vector<uint8_t>{0, 0, 1, 128, 255, 255};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 0, 0, 2, 3, 2, 3),
+                  CE_None);
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 0, 0, 2, 3), CE_None);
+        EXPECT_EQ(res, expected_res);
+
+#if __cplusplus >= 202002L
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(std::span<uint8_t>(res)),
+                  CE_None);
+        EXPECT_EQ(res, expected_res);
+#endif
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data(), res.size()),
+                  CE_None);
+        EXPECT_EQ(res, expected_res);
+
+        CPLPushErrorHandler(CPLQuietErrorHandler);
+        // Too small buffer size
+        EXPECT_EQ(
+            poDS->GetRasterBand(1)->ReadRaster(res.data(), res.size() - 1),
+            CE_Failure);
+        CPLPopErrorHandler();
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(
+            poDS->GetRasterBand(1)->ReadRaster(res.data(), 0, 0, 0, 2, 3, 2, 3),
+            CE_None);
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data(), 0, 0, 0, 2, 3),
+                  CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    {
+        std::vector<double> res;
+        CPLPushErrorHandler(CPLQuietErrorHandler);
+        // Too large nBufXSize
+        EXPECT_EQ(
+            poDS->GetRasterBand(1)->ReadRaster(res, 0, 0, 1, 1, UINT32_MAX, 1),
+            CE_Failure);
+
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data(), UINT32_MAX, 0,
+                                                     0, 1, 1, UINT32_MAX, 1),
+                  CE_Failure);
+
+        // Too large nBufYSize
+        EXPECT_EQ(
+            poDS->GetRasterBand(1)->ReadRaster(res, 0, 0, 1, 1, 1, UINT32_MAX),
+            CE_Failure);
+
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data(), UINT32_MAX, 0,
+                                                     0, 1, 1, 1, UINT32_MAX),
+                  CE_Failure);
+
+        CPLPopErrorHandler();
+    }
+
+    {
+        std::vector<double> res;
+        CPLPushErrorHandler(CPLQuietErrorHandler);
+        // Huge nBufXSize x nBufYSize
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 0, 0, 1, 1, INT32_MAX,
+                                                     INT32_MAX),
+                  CE_Failure);
+        CPLPopErrorHandler();
+    }
+
+    {
+        std::vector<double> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 1, 2, 1, 1), CE_None);
+        const auto expected_res = std::vector<double>{1e300};
+        EXPECT_EQ(res, expected_res);
+    }
+
+    {
+        std::vector<double> res;
+        CPLPushErrorHandler(CPLQuietErrorHandler);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 1.1, 2.1, 0.9, 0.9),
+                  CE_Failure);
+        CPLPopErrorHandler();
+
+        EXPECT_EQ(
+            poDS->GetRasterBand(1)->ReadRaster(res, 1.1, 2.1, 0.9, 0.9, 1, 1),
+            CE_None);
+        const auto expected_res = std::vector<double>{1e300};
+        EXPECT_EQ(res, expected_res);
+    }
+
+    {
+        std::vector<double> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res, 0.4, 0.5, 1.4, 1.5, 1,
+                                                     1, GRIORA_Bilinear),
+                  CE_None);
+        ASSERT_EQ(res.size(), 1U);
+        const double expected_res = -8.64198e+298;
+        EXPECT_NEAR(res[0], expected_res, std::fabs(expected_res) * 1e-6);
+    }
+
+    // Test int8_t
+    {
+        std::vector<int8_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<int8_t>{-128, -1, 1, 127, 127, 127};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test uint16_t
+    {
+        std::vector<uint16_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<uint16_t>{0, 0, 1, 128, 32768, 65535};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data(), res.size()),
+                  CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test int16_t
+    {
+        std::vector<int16_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<int16_t>{-32768, -1, 1, 128, 32767, 32767};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+#if 0
+    // Not allowed by C++ standard
+    // Test complex<int16_t>
+    {
+        std::vector<std::complex<int16_t>> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res = std::vector<std::complex<int16_t>>{
+            -32768, -1, 1, 128, 32767, 32767};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+#endif
+
+    // Test uint32_t
+    {
+        std::vector<uint32_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<uint32_t>{0, 0, 1, 128, 32768, UINT32_MAX};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test int32_t
+    {
+        std::vector<int32_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<int32_t>{INT32_MIN, -1, 1, 128, 32768, INT32_MAX};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+#if 0
+    // Not allowed by C++ standard
+    // Test complex<int32_t>
+    {
+        std::vector<std::complex<int32_t>> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res = std::vector<std::complex<int32_t>>{
+            INT32_MIN, -1, 1, 128, 32768, INT32_MAX};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+#endif
+
+    // Test uint64_t
+    {
+        std::vector<uint64_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<uint64_t>{0, 0, 1, 128, 32768, UINT64_MAX};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test int64_t
+    {
+        std::vector<int64_t> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<int64_t>{INT64_MIN, -1, 1, 128, 32768, INT64_MAX};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test float
+    {
+        std::vector<float> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<float>{-std::numeric_limits<float>::infinity(),
+                               -1.0f,
+                               1.0f,
+                               128.0f,
+                               32768.0f,
+                               std::numeric_limits<float>::infinity()};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0.0f);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test complex<float>
+    {
+        std::vector<std::complex<float>> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res = std::vector<std::complex<float>>{
+            -std::numeric_limits<float>::infinity(),
+            -1.0f,
+            1.0f,
+            128.0f,
+            32768.0f,
+            std::numeric_limits<float>::infinity()};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0.0f);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test double
+    {
+        std::vector<double> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<double>{-1e300, -1, 1, 128, 32768, 1e300};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
+    }
+
+    // Test complex<double>
+    {
+        std::vector<std::complex<double>> res;
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res), CE_None);
+        const auto expected_res =
+            std::vector<std::complex<double>>{-1e300, -1, 1, 128, 32768, 1e300};
+        EXPECT_EQ(res, expected_res);
+
+        std::fill(res.begin(), res.end(), 0);
+        EXPECT_EQ(poDS->GetRasterBand(1)->ReadRaster(res.data()), CE_None);
+        EXPECT_EQ(res, expected_res);
     }
 }
 

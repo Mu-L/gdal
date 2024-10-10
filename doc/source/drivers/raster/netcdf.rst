@@ -482,7 +482,7 @@ The following creation options are available:
       these variables by default. In import the CF "grid_mapping" variable
       takes precedence and the GDAL tags are used if they do not conflict
       with CF metadata. In GDAL 4, spatial_ref will not be exported. The
-      crs_wkt CF metatata attribute will be used instead.
+      crs_wkt CF metadata attribute will be used instead.
 
 -  .. co:: WRITE_LONLAT
       :choices: YES, NO, IF_NEEDED
@@ -749,9 +749,6 @@ This driver is compiled with the UNIDATA NetCDF library.
 
 You need to download or compile the NetCDF library before configuring
 GDAL with NetCDF support.
-
-See `NetCDF GDAL wiki <http://trac.osgeo.org/gdal/wiki/NetCDF>`__ for
-build instructions and information regarding HDF4, NetCDF-4 and HDF5.
 
 See Also:
 ---------
