@@ -56,6 +56,7 @@ add_library(
   ogr_expat.cpp
   ogrpgeogeometry.cpp
   ogr_geocoding.cpp
+  ogr_schema_override.cpp
   ogrgeomfielddefn.cpp
   ograpispy.cpp
   ogr_xerces.cpp
@@ -84,6 +85,7 @@ set(GDAL_DATA_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/data/pci_datum.txt
     ${CMAKE_CURRENT_SOURCE_DIR}/data/pci_ellips.txt
     ${CMAKE_CURRENT_SOURCE_DIR}/data/stateplane.csv
+    ${CMAKE_CURRENT_SOURCE_DIR}/data/ogr_fields_override.schema.json
 )
 set_property(
   TARGET ${GDAL_LIB_TARGET_NAME}
@@ -96,6 +98,11 @@ target_compile_options(ogr PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_C
 target_include_directories(ogr PRIVATE $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
 set_property(TARGET ogr PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
 target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:ogr>)
+
+target_compile_definitions(ogr PUBLIC $<$<CONFIG:DEBUG>:GDAL_DEBUG>)
+if (USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(ogr REUSE_FROM gdal_priv_header)
+endif()
 
 if (GDAL_USE_ZLIB_INTERNAL)
   gdal_add_vendored_lib(ogr libz)
