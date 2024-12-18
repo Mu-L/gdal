@@ -2305,18 +2305,18 @@ static std::unique_ptr<GDALArgumentParser> GDALVectorInfoOptionsGetParser(
     argParser->add_argument("-al")
         .store_into(psOptions->bAllLayers)
         .help(_("List all layers (used instead of having to give layer names "
-                "as arguments)"));
+                "as arguments)."));
 
     {
         auto &group = argParser->add_mutually_exclusive_group();
         group.add_argument("-so", "-summary")
             .store_into(psOptions->bSummaryParser)
-            .help(_("Summary only: list all layers (used instead of having to "
-                    "give layer names as arguments)"));
+            .help(_("Summary only: show only summary information like "
+                    "projection, schema, feature count and extents."));
 
         group.add_argument("-features")
             .store_into(psOptions->bFeaturesParser)
-            .help(_("Enable listing of features"));
+            .help(_("Enable listing of features."));
     }
 
     argParser->add_argument("-limit")
@@ -2353,13 +2353,13 @@ static std::unique_ptr<GDALArgumentParser> GDALVectorInfoOptionsGetParser(
                 if (psOptionsForBinary)
                     psOptionsForBinary->aosOpenOptions.AddString(s.c_str());
             })
-        .help(_("Dataset open option (format-specific)"));
+        .help(_("Dataset open option (format-specific)."));
 
     argParser->add_argument("-nomd")
         .flag()
         .action([psOptions](const std::string &)
                 { psOptions->bShowMetadata = false; })
-        .help(_("Suppress metadata printing"));
+        .help(_("Suppress metadata printing."));
 
     argParser->add_argument("-listmdd")
         .store_into(psOptions->bListMDD)
@@ -2422,6 +2422,12 @@ static std::unique_ptr<GDALArgumentParser> GDALVectorInfoOptionsGetParser(
                 }
             })
         .help(_("Format/driver name(s) to try when opening the input file."));
+
+    argParser->add_argument("-stdout")
+        .flag()
+        .store_into(psOptions->bStdoutOutput)
+        .hidden()
+        .help(_("Directly output on stdout (format=text mode only)"));
 
     auto &argFilename = argParser->add_argument("filename")
                             .action(
@@ -2589,7 +2595,7 @@ GDALVectorInfoOptionsNew(char **papszArgv,
                 GDALRemoveBOM(pabyRet);
                 char *pszSQLStatement = reinterpret_cast<char *>(pabyRet);
                 psOptions->osSQLStatement =
-                    GDALRemoveSQLComments(pszSQLStatement);
+                    CPLRemoveSQLComments(pszSQLStatement);
                 VSIFree(pabyRet);
             }
             else
